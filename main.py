@@ -84,7 +84,7 @@ def query_yesterday_papers(category: str):
                 sort_by=arxiv.SortCriterion.LastUpdatedDate,
                 sort_order=arxiv.SortOrder.Ascending,
             ),
-            offset=max_results,
+            offset=offset,
         )
         logger.debug("fetched results.")
 
