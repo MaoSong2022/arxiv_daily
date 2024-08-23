@@ -73,54 +73,49 @@ def query_yesterday_papers(category: str):
 
     results = []
 
-    offset = 0
-    max_results = 10
+    max_results = 500
 
-    while True:
-        search_results = client.results(
-            arxiv.Search(
-                query=category,
-                max_results=max_results,
-                sort_by=arxiv.SortCriterion.LastUpdatedDate,
-                sort_order=arxiv.SortOrder.Ascending,
-            ),
-            offset=offset,
-        )
-        logger.debug("fetched results.")
+    search_results = client.results(
+        arxiv.Search(
+            query=category,
+            max_results=max_results,
+            sort_by=arxiv.SortCriterion.LastUpdatedDate,
+            sort_order=arxiv.SortOrder.Descending,
+        ),
+    )
+    logger.debug("fetched results.")
 
-        for search_result in search_results:
-            item = {
-                "paper_id": search_result.get_short_id(),
-                "paper_url": search_result.entry_id,
-                "updated": search_result.updated.astimezone(tz),
-                "published": search_result.published.astimezone(tz),
-                "title": search_result.title,
-                "abstract": search_result.summary,
-                "doi": search_result.doi,
-                "authors": [str(author) for author in search_result.authors],
-                "comments": search_result.comment,
-                "journal_ref": search_result.journal_ref,
-                "primary_category": search_result.primary_category,
-                "categories": search_result.categories,
-                "links": [str(link) for link in search_result.links],
-                "pdf_url": search_result.pdf_url,
-            }
+    for search_result in search_results:
+        item = {
+            "paper_id": search_result.get_short_id(),
+            "paper_url": search_result.entry_id,
+            "updated": search_result.updated.astimezone(tz),
+            "published": search_result.published.astimezone(tz),
+            "title": search_result.title,
+            "abstract": search_result.summary,
+            "doi": search_result.doi,
+            "authors": [str(author) for author in search_result.authors],
+            "comments": search_result.comment,
+            "journal_ref": search_result.journal_ref,
+            "primary_category": search_result.primary_category,
+            "categories": search_result.categories,
+            "links": [str(link) for link in search_result.links],
+            "pdf_url": search_result.pdf_url,
+        }
 
-            logger.debug(f"title={item['title']}")
+        logger.debug(f"title={item['title']}")
 
-            update_time = item["updated"]
-            logger.debug(f"update_time={item['updated']}")
-            # we get the papers that submitted in the range (now_day-2^14:00, now_day-1^14:00, EST)
-            # https://info.arxiv.org/help/availability.html
+        update_time = item["updated"]
+        logger.debug(f"update_time={item['updated']}")
+        # we get the papers that submitted in the range (now_day-2^14:00, now_day-1^14:00, EST)
+        # https://info.arxiv.org/help/availability.html
 
-            if update_time > submitted_deadline:
-                break
+        if update_time < submitted_deadline:
+            break
 
-            item["updated"] = str(item["updated"])
-            item["published"] = str(item["published"])
-            results.append(item)
-
-        offset += max_results
+        item["updated"] = str(item["updated"])
+        item["published"] = str(item["published"])
+        results.append(item)
 
     return results
 
