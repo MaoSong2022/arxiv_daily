@@ -92,8 +92,8 @@ def query_yesterday_papers(category: str):
             item = {
                 "paper_id": search_result.get_short_id(),
                 "paper_url": search_result.entry_id,
-                "updated": str(search_result.updated.astimezone(tz)),
-                "published": str(search_result.published.astimezone(tz)),
+                "updated": search_result.updated.astimezone(tz),
+                "published": search_result.published.astimezone(tz),
                 "title": search_result.title,
                 "abstract": search_result.summary,
                 "doi": search_result.doi,
