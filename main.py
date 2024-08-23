@@ -12,7 +12,7 @@ import utils
 
 
 tz = timezone("US/Eastern")
-logger.add("daily.log")
+logger.add("daily.log", mode="w")
 
 
 def retrieve_metadata(paper_id: str) -> Dict[str, Any]:
