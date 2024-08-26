@@ -3,10 +3,11 @@ from typing import List, Dict, Any
 from pathlib import Path
 import datetime
 from pytz import timezone
+import ollama
+import tqdm
 
 import arxiv
 from loguru import logger
-from rich import print
 
 import utils
 
@@ -15,56 +16,36 @@ tz = timezone("US/Eastern")
 logger.add("daily.log", mode="w")
 
 
-def retrieve_metadata(paper_id: str) -> Dict[str, Any]:
-    """
-    Retrieves metadata for the given list of paper IDs.
-
-    Args:
-    data (str): paper_id
-
-    Returns:
-    List[Dict[str, Any]]: A list of dictionaries containing metadata for each paper.
-
-    Raises:
-    None
-
-    References:
-    https://info.arxiv.org/help/api/user-manual.html#_details_of_atom_results_returned
-
-    """
-
-    client = arxiv.Client()
-
-    search_results = client.results(arxiv.Search(id_list=[paper_id]))
-
-    paper_metadata = []
-    for index, result in enumerate(search_results):
-        paper_metadata.append(
-            {
-                "entry_id": result.entry_id,
-                "updated": str(result.updated),
-                "published": str(result.published.astimezone(tz)),
-                "title": result.title,
-                "doi": result.doi,
-                "authors": [str(author) for author in result.authors],
-                "summary": result.summary,
-                "journal_ref": result.journal_ref,
-                "primary_category": result.primary_category,
-                "categories": result.categories,
-                "links": [str(link) for link in result.links],
-                "pdf_url": result.pdf_url,
-                "paper_id": paper_id,
-            }
+def add_tldr(json_data):
+    logger.info("adding TLDR for extracted papers.")
+    for item in tqdm.tqdm(json_data):
+        response = ollama.chat(
+            model="qwen2:7b",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "你是一个专业的科研助手，基于以下给定的一篇论文的摘要，用一句话总结这篇论文，并提炼出三到五个关键词。",
+                },
+                {
+                    "role": "user",
+                    "content": item["abstract"],
+                },
+            ],
         )
+        tldr = response["message"]["content"]
+        item["tldr"] = tldr
 
-    return paper_metadata
 
-
-def query_yesterday_papers(category: str):
+def query_yesterday_papers(
+    category: str,
+    max_results: int = 500,
+    delta_day: int = 2,
+):
+    logger.info(f"processing category: {category}")
     client = arxiv.Client()
 
     now = datetime.datetime.now(tz)
-    day_before_yesterday = now - datetime.timedelta(days=2)
+    day_before_yesterday = now - datetime.timedelta(days=delta_day)
     submitted_deadline = day_before_yesterday.replace(
         hour=14, minute=0, second=0, microsecond=0
     )
@@ -72,8 +53,6 @@ def query_yesterday_papers(category: str):
     logger.debug(f"submitted_deadline={str(submitted_deadline)}")
 
     results = []
-
-    max_results = 500
 
     search_results = client.results(
         arxiv.Search(
@@ -83,7 +62,7 @@ def query_yesterday_papers(category: str):
             sort_order=arxiv.SortOrder.Descending,
         ),
     )
-    logger.debug("fetched results.")
+    logger.debug("successfully fetching results.")
 
     for search_result in search_results:
         item = {
@@ -120,10 +99,34 @@ def query_yesterday_papers(category: str):
     return results
 
 
+def remove_duplicates_by_id(data):
+    seen_ids = set()
+    unique_data = []
+    for item in data:
+        if item["paper_id"] in seen_ids:
+            continue
+
+        seen_ids.add(item["paper_id"])
+        unique_data.append(item)
+    return unique_data
+
+
 def main():
+    # step 1: retrieve the latest papers
+    delta_day = 4  # 2 if delta_day is None
+    categories = ["cs.LG", "cs.AI", "cs.CV", "eess.IV", "eess.AS", "cs.CL"]
+
+    result = []
+    for category in categories:
+        papers = query_yesterday_papers("cs.CV", delta_day=delta_day)
+        result.extend(papers)
+
+    remove_duplicates_by_id(result)
+    logger.info(f"there are {len(result)} unique papers.")
+    # use LLM to add TLDR for better filtering
+    add_tldr(result)
     today = datetime.date.today()
-    yesterday_papers = query_yesterday_papers("cs.CV")
-    utils.export_to_json(yesterday_papers, f"output/{str(today)}.json")
+    utils.export_to_json(result, f"output/{str(today)}.json")
 
 
 if __name__ == "__main__":
