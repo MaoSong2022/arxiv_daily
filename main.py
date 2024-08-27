@@ -112,20 +112,31 @@ def remove_duplicates_by_id(data):
 
 
 def main():
-    # step 1: retrieve the latest papers
-    delta_day = 4  # 2 if delta_day is None
+    # step 1: determine the deadline for retrieval
+    today = datetime.date.today()
+    week_day = today.weekday()
+
+    delta_days = [4, 4, 2, 2, 2, None, None]
+    # https://info.arxiv.org/help/availability.html Announcement Schedule
+    delta_day = delta_days[week_day]
+    if not delta_days:
+        logger.error("Arxiv has no announcements on Saturday or Sunday")
+        return
+
     categories = ["cs.LG", "cs.AI", "cs.CV", "eess.IV", "eess.AS", "cs.CL"]
 
+    # step 2: retrieve results
     result = []
     for category in categories:
-        papers = query_yesterday_papers("cs.CV", delta_day=delta_day)
+        papers = query_yesterday_papers(category, delta_day=delta_day)
         result.extend(papers)
 
+    # step 3: remove duplicates
     remove_duplicates_by_id(result)
     logger.info(f"there are {len(result)} unique papers.")
-    # use LLM to add TLDR for better filtering
+    # Step 4: use LLM to add TLDR for better filtering
     add_tldr(result)
-    today = datetime.date.today()
+
     utils.export_to_json(result, f"output/{str(today)}.json")
 
 
