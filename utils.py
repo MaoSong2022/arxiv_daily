@@ -10,4 +10,4 @@ def load_json(json_file: str):
 
 def export_to_json(data, json_file: str):
     with open(json_file, "w") as f:
-        json.dump(data, f, indent=4)
+        json.dump(data, f, indent=4, ensure_ascii=False)
