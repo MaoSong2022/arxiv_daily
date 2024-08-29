@@ -140,7 +140,7 @@ def main():
         logger.info(f"retrieve {len(papers)} from category {category}")
 
     # step 3: remove duplicates
-    remove_duplicates_by_id(result)
+    result = remove_duplicates_by_id(result)
     logger.info(f"there are {len(result)} unique papers.")
     # Step 4: use LLM to add TLDR for better filtering
     add_tldr(result)
