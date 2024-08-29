@@ -1,6 +1,7 @@
 import os
 from typing import List, Dict, Any
 from pathlib import Path
+from dotenv import load_dotenv
 import datetime
 from pytz import timezone
 import ollama
@@ -8,9 +9,13 @@ import tqdm
 
 import arxiv
 from loguru import logger
+from zhipuai import ZhipuAI
 
 import utils
 
+load_dotenv()
+ZHIPU_API_KEY = os.getenv("ZHIPU_API_KEY")
+client = ZhipuAI(api_key=ZHIPU_API_KEY)
 
 tz = timezone("US/Eastern")
 logger.add("daily.log", mode="w")
@@ -19,12 +24,12 @@ logger.add("daily.log", mode="w")
 def add_tldr(json_data):
     logger.info("adding TLDR for extracted papers.")
     for item in tqdm.tqdm(json_data):
-        response = ollama.chat(
-            model="qwen2:7b",
+        response = client.chat.completions.create(
+            model="glm-4-flash",
             messages=[
                 {
                     "role": "system",
-                    "content": "你是一个专业的科研助手，基于以下给定的一篇论文的摘要，用一句话总结这篇论文，并提炼出三到五个关键词。",
+                    "content": "你是一个专业的科研助手，基于以下给定的一篇论文的摘要，用一句话总结这篇论文，并提炼出三到五个关键词。使用中文回答",
                 },
                 {
                     "role": "user",
@@ -32,7 +37,9 @@ def add_tldr(json_data):
                 },
             ],
         )
-        tldr = response["message"]["content"]
+
+        tldr = str(response.choices[0].message.content)
+        logger.debug(f"tldr: {tldr}")
         item["tldr"] = tldr
 
 
