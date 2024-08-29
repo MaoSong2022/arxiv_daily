@@ -130,13 +130,14 @@ def main():
         logger.error("Arxiv has no announcements on Saturday or Sunday")
         return
 
-    categories = ["cs.LG", "cs.AI", "cs.CV", "eess.IV", "eess.AS", "cs.CL"]
+    categories = ["cs.LG", "cs.AI", "cs.CV", "cs.CL"]
 
     # step 2: retrieve results
     result = []
     for category in categories:
         papers = query_yesterday_papers(category, delta_day=delta_day)
         result.extend(papers)
+        logger.info(f"retrieve {len(papers)} from category {category}")
 
     # step 3: remove duplicates
     remove_duplicates_by_id(result)
