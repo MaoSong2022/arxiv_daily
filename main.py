@@ -84,7 +84,7 @@ def query_yesterday_papers(
 
     search_results = client.results(
         arxiv.Search(
-            query=f"all:{category}",
+            query=f"cat:{category}",
             max_results=max_results,
             sort_by=arxiv.SortCriterion.LastUpdatedDate,
             sort_order=arxiv.SortOrder.Descending,
