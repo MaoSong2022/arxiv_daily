@@ -122,6 +122,20 @@ def remove_duplicates_by_id(data):
     return unique_data
 
 
+def remove_duplicates_by_previous_data(data):
+    json_files = glob.glob(os.path.join("output", "*.json"))
+    processed_paper_ids = set()
+    for json_file in json_files:
+        processed_paper_ids = processed_paper_ids.union(
+            set([x["paper_id"] for x in utils.load_json(json_file)])
+        )
+
+    logger.debug(f"there are {len(processed_paper_ids)} processed papers")
+    unique_data = [x for x in data if x["paper_id"] not in processed_paper_ids]
+
+    return unique_data
+
+
 def main():
     # step 1: determine the deadline for retrieval
     today = datetime.date.today()
@@ -146,6 +160,8 @@ def main():
 
     # step 3: remove duplicates
     result = remove_duplicates_by_id(result)
+    result = remove_duplicates_by_previous_data(result)
+
     logger.info(f"there are {len(result)} unique papers.")
     # Step 4: use LLM to add TLDR for better filtering
     add_tldr(result)
