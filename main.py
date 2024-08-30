@@ -58,7 +58,13 @@ def add_tldr(json_data):
 
         tldr = str(response.choices[0].message.content)
         logger.debug(f"tldr: {tldr}")
-        item["tldr"] = tldr
+        splits = tldr.split("Keywords: ")
+        item["tldr"] = splits[0]
+        if len(splits) == 1:
+            item["keywords"] = []
+        else:
+            keywords = tldr.split("Keywords: ")[1].split(sep=",")
+            item["keywords"] = [keyword.strip() for keyword in keywords]
 
 
 def query_yesterday_papers(
