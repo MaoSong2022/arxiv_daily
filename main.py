@@ -17,8 +17,10 @@ load_dotenv()
 ZHIPU_API_KEY = os.getenv("ZHIPU_API_KEY")
 client = ZhipuAI(api_key=ZHIPU_API_KEY)
 
-tz = timezone("US/Eastern")
+
+logger.remove()
 logger.add("daily.log", mode="w")
+logger.add(sys.stdout, level="INFO")
 
 
 def add_tldr(json_data):
@@ -88,13 +90,15 @@ def query_yesterday_papers(
             "links": [str(link) for link in search_result.links],
             "pdf_url": search_result.pdf_url,
         }
-
-        logger.debug(f"title={item['title']}")
+        logger.debug(f"paper title={item['title']}")
+        logger.debug(f"updated={item['updated']}")
 
         update_time = item["updated"]
         logger.debug(f"update_time={item['updated']}")
         # we get the papers that submitted in the range (now_day-2^14:00, now_day-1^14:00, EST)
         # https://info.arxiv.org/help/availability.html
+
+        logger.debug(f"updated_day = {updated_day}")
 
         if update_time < submitted_deadline:
             break
@@ -122,6 +126,7 @@ def main():
     # step 1: determine the deadline for retrieval
     today = datetime.date.today()
     week_day = today.weekday()
+    logger.info(f"today: {today}, week_day: {week_day}")
 
     delta_days = [4, 4, 2, 2, 2, None, None]
     # https://info.arxiv.org/help/availability.html Announcement Schedule
