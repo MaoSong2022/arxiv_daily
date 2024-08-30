@@ -22,20 +22,36 @@ logger.remove()
 logger.add("daily.log", mode="w")
 logger.add(sys.stdout, level="INFO")
 
+system_prompt = """
+You are a professional research assistant, Given the paper title and the paper abstract.
+Use one sentence to summarize this paper, start with 'Summary: '.
+Then, extract less than 5 keywords, delimited by comma, start with 'Keywords: '.
+Here are some predefined keywords, use them if there are similar one:
+1. Large multimodal model
+2. Large language model
+3. Benchmark
+4. Dataset
+5. RAG
+6. Agent
+Use English to complete this task.
+"""
+
 
 def add_tldr(json_data):
     logger.info("adding TLDR for extracted papers.")
     for item in tqdm.tqdm(json_data):
+        # add predefined keywords
+
         response = client.chat.completions.create(
             model="glm-4-flash",
             messages=[
                 {
                     "role": "system",
-                    "content": "你是一个专业的科研助手，基于以下给定的一篇论文的摘要，用一句话总结这篇论文，并提炼出三到五个关键词。使用中文回答",
+                    "content": system_prompt,
                 },
                 {
                     "role": "user",
-                    "content": item["abstract"],
+                    "content": f'Paper Title: {item["title"]}\n Paper Abstract: {item["abstract"]}',
                 },
             ],
         )
