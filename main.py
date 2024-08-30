@@ -69,13 +69,10 @@ def query_yesterday_papers(
     logger.info(f"processing category: {category}")
     client = arxiv.Client()
 
-    now = datetime.datetime.now(tz)
-    day_before_yesterday = now - datetime.timedelta(days=delta_day)
-    submitted_deadline = day_before_yesterday.replace(
-        hour=14, minute=0, second=0, microsecond=0
-    )
-    submitted_deadline = submitted_deadline.astimezone(tz)
-    logger.debug(f"submitted_deadline={str(submitted_deadline)}")
+    now = datetime.datetime.now(pytz.utc)
+    today = now.date()
+    yesterday = today - datetime.timedelta(days=1)
+    logger.debug(f"submitted_deadline={yesterday}")
 
     results = []
 
@@ -93,8 +90,8 @@ def query_yesterday_papers(
         item = {
             "paper_id": search_result.get_short_id(),
             "paper_url": search_result.entry_id,
-            "updated": search_result.updated.astimezone(tz),
-            "published": search_result.published.astimezone(tz),
+            "updated": search_result.updated,
+            "published": search_result.published,
             "title": search_result.title,
             "abstract": search_result.summary,
             "doi": search_result.doi,
@@ -113,10 +110,11 @@ def query_yesterday_papers(
         logger.debug(f"update_time={item['updated']}")
         # we get the papers that submitted in the range (now_day-2^14:00, now_day-1^14:00, EST)
         # https://info.arxiv.org/help/availability.html
+        updated_day = item["updated"].date()
 
         logger.debug(f"updated_day = {updated_day}")
 
-        if update_time < submitted_deadline:
+        if updated_day not in [yesterday]:
             break
 
         item["updated"] = str(item["updated"])
