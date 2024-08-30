@@ -6,6 +6,8 @@ import datetime
 import pytz
 import ollama
 import tqdm
+import glob
+import sys
 
 import arxiv
 from loguru import logger
@@ -112,8 +114,6 @@ def query_yesterday_papers(
         logger.debug(f"paper title={item['title']}")
         logger.debug(f"updated={item['updated']}")
 
-        update_time = item["updated"]
-        logger.debug(f"update_time={item['updated']}")
         # we get the papers that submitted in the range (now_day-2^14:00, now_day-1^14:00, EST)
         # https://info.arxiv.org/help/availability.html
         updated_day = item["updated"].date()
@@ -131,13 +131,13 @@ def query_yesterday_papers(
 
 
 def remove_duplicates_by_id(data):
-    seen_ids = set()
+    processed_paper_ids = set()
     unique_data = []
     for item in data:
-        if item["paper_id"] in seen_ids:
+        if item["paper_id"] in processed_paper_ids:
             continue
 
-        seen_ids.add(item["paper_id"])
+        processed_paper_ids.add(item["paper_id"])
         unique_data.append(item)
     return unique_data
 
