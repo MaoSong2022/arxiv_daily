@@ -3,7 +3,7 @@ from typing import List, Dict, Any
 from pathlib import Path
 from dotenv import load_dotenv
 import datetime
-from pytz import timezone
+import pytz
 import ollama
 import tqdm
 
