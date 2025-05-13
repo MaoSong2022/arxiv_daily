@@ -1,0 +1,24 @@
+<h2 id="{section_id}" class="section-header">
+    {section_name} ({paper_count})
+    <div class="section-controls">
+        <div class="control-group">
+            <label class="section-select-all">
+                <button onclick="toggleSectionSelection('{section_id}', true)">Show All</button>
+                <button onclick="toggleSectionSelection('{section_id}', false)">Hide All</button>
+            </label>
+            <div class="card-size-controls">
+                <span class="card-size-label">Card Size:</span>
+                <select class="card-size-selector" onchange="updateCardSize(this.value, this)">
+                    <option value="small">Small</option>
+                    <option value="medium" selected>Medium</option>
+                    <option value="large">Large</option>
+                    <option value="full">Full Width</option>
+                </select>
+            </div>
+        </div>
+    </div>
+</h2>
+
+<div class="papers-container card-size-medium">
+    {paper_cards}
+</div>
