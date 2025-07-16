@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 
 from src.utils import export_to_json
 from src.data.retrieve_paper import query_arxiv_papers
+from src.data.query_cool_papers import query_cool_papers
 from src.web.generate_html import generate_html_report
 from src.generation.generate_markdown_report import generate_markdown_report
 from src.data.summarize import add_paper_summaries
@@ -78,6 +79,13 @@ def parse_args() -> argparse.Namespace:
         default="ollama/qwen2.5:32b",
         help="Model name to use for generating summaries",
     )
+    parser.add_argument(
+        "--source",
+        type=str,
+        choices=["arxiv", "cool_paper"],
+        default="arxiv",
+        help="Source to query papers from: 'arxiv' or 'cool_paper'",
+    )
     return parser.parse_args()
 
 
@@ -111,6 +119,7 @@ def main() -> None:
     selected_paper_file = (
         f"{args.output_path}/{target_month}/{str(target_date)}_exported_papers.json"
     )
+    logger.info(f"Selected paper file: {selected_paper_file}")
     html_file = f"{args.output_path}/{target_month}/{str(target_date)}_report.html"
     markdown_file = f"{args.output_path}/{target_month}/{str(target_date)}_report.md"
 
@@ -118,13 +127,17 @@ def main() -> None:
 
     # Check if we can use existing data or need to retrieve new papers
     if os.path.exists(output_file) and not args.retrieve:
+        logger.info("Using existing data")
         process_existing_data(
             output_file, selected_paper_file, html_file, markdown_file, args
         )
         return
 
     # Step 1: Retrieve papers from yesterday
-    result = query_arxiv_papers(categories=config.categories, date_day=target_date)
+    if args.source == "arxiv":
+        result = query_arxiv_papers(categories=config.categories, date_day=target_date)
+    else:
+        result = query_cool_papers(categories=config.categories, date_day=target_date)
 
     # Count total papers
     total_papers = sum(len(papers) for category, papers in result.items())
@@ -153,8 +166,8 @@ def main() -> None:
     logger.info(f"HTML report generated at {html_file}")
 
     # Step 6: Generate markdown report
-    generate_markdown_report(all_papers, markdown_file)
-    logger.info(f"Markdown report generated at {markdown_file}")
+    # generate_markdown_report(all_papers, markdown_file)
+    # logger.info(f"Markdown report generated at {markdown_file}")
 
 
 def process_existing_data(
@@ -178,6 +191,7 @@ def process_existing_data(
 
     # Check if we have selected papers
     if os.path.exists(selected_paper_file):
+        logger.info(f"Loading selected papers from {selected_paper_file}")
         selected_papers = load_json(selected_paper_file)
         selected_ids = [paper["pdf_url"] for paper in selected_papers]
 
@@ -188,6 +202,7 @@ def process_existing_data(
                 if paper["pdf_url"] in selected_ids:
                     all_papers.append(paper)
     else:
+        logger.info(f"Loading all papers from {output_file}")
         # Load all papers from the output file
         with open(output_file, "r", encoding="utf-8") as f:
             data = json.load(f)

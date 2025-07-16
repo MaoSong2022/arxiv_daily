@@ -38,6 +38,8 @@ def query_arxiv_papers(
         datetime.time(14, 0),
     ).replace(tzinfo=datetime.timezone(datetime.timedelta(hours=-5)))
 
+    logger.info(f"target data start: {target_day_start}, target_dat_end: {target_day_end}")
+
     # Check if the paper was updated on the target date
     date_range = (target_day_start, target_day_end)
     logger.debug(f"Date range: ({str(date_range[0])}, {str(date_range[1])})")
@@ -78,19 +80,20 @@ def query_arxiv_papers(
                 "pdf_url": search_result.pdf_url,
             }
 
-            logger.debug(f"Paper {item['paper_id']} updated day: {item['updated']}")
+            logger.debug(f"Paper {item['paper_id']} published day: {item['published']}, updated day: {item['updated']}")
 
             # Stop processing once we reach papers outside our date range
-            if item["updated"] <= date_range[0]:
+            if item["updated"] <= target_day_start:
                 logger.debug(
                     f"Skipping paper from {str(item['updated'])} as it's outside our target date range"
                 )
                 break
 
             # Skip papers that weren't published yesterday or if the update is more than 7 days after publication
-            if item["updated"].date() - item["published"].date() > datetime.timedelta(
-                days=7
-            ):
+            if item["published"] <= target_day_start:
+                logger.debug(
+                    f"Skipping paper {item['paper_id']} as it's published before the target date range"
+                )
                 continue
 
             if item["primary_category"] not in categories:

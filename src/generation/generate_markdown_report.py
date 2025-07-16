@@ -25,10 +25,11 @@ def generate_markdown_report(data: List[Dict[str, Any]], output_path: str) -> No
 
         # Check if paper has pre-assigned classifiers
         classifiers = paper.get("classifiers", ["Unknown"])
-        if classifiers[0] in sections:
-            sections[classifiers[0]].append(paper)
+        classifier = classifiers[0].lower()
+        if classifier in sections:
+            sections[classifier].append(paper)
         else:
-            sections[classifiers[0]] = [paper]
+            sections[classifier] = [paper]
 
     sub_sections_contents = {}
 
@@ -39,7 +40,7 @@ def generate_markdown_report(data: List[Dict[str, Any]], output_path: str) -> No
         if not papers:  # Skip empty sections
             continue
 
-        sub_section_content += f"## {section}\n"
+        sub_section_content += f"### {section}\n"
 
         for paper in papers:
             title = paper.get("title", "No Title")
@@ -80,7 +81,7 @@ def generate_markdown_report(data: List[Dict[str, Any]], output_path: str) -> No
     # Write to file
     with open(output_path, "w", encoding="utf-8") as f:
         for section, content in sections_contents.items():
-            f.write(f"# {section}\n")
+            f.write(f"## {section}\n")
             f.write(content)
             f.write("\n\n")
 
