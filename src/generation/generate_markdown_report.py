@@ -80,6 +80,11 @@ def generate_markdown_report(data: List[Dict[str, Any]], output_path: str) -> No
 
     # Write to file
     with open(output_path, "w", encoding="utf-8") as f:
+        # Add date as level 1 heading
+        from datetime import datetime
+        current_date = datetime.now().strftime("%Y-%m-%d")
+        f.write(f"# {current_date}\n\n")
+        
         for section, content in sections_contents.items():
             f.write(f"## {section}\n")
             f.write(content)

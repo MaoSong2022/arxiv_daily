@@ -1,4 +1,4 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import datetime
 
 from loguru import logger
@@ -31,14 +31,16 @@ def query_arxiv_papers(
     updated_day_delta = settings.day_delta[date_day.weekday()]
     target_day_start = datetime.datetime.combine(
         date_day - datetime.timedelta(days=updated_day_delta[0]),
-        datetime.time(14, 0),
+        datetime.time(10, 0),
     ).replace(tzinfo=datetime.timezone(datetime.timedelta(hours=-5)))
     target_day_end = datetime.datetime.combine(
         date_day - datetime.timedelta(days=updated_day_delta[1]),
         datetime.time(14, 0),
     ).replace(tzinfo=datetime.timezone(datetime.timedelta(hours=-5)))
 
-    logger.info(f"target data start: {target_day_start}, target_dat_end: {target_day_end}")
+    logger.info(
+        f"target data start: {target_day_start}, target_dat_end: {target_day_end}"
+    )
 
     # Check if the paper was updated on the target date
     date_range = (target_day_start, target_day_end)
@@ -80,7 +82,9 @@ def query_arxiv_papers(
                 "pdf_url": search_result.pdf_url,
             }
 
-            logger.debug(f"Paper {item['paper_id']} published day: {item['published']}, updated day: {item['updated']}")
+            logger.debug(
+                f"Paper {item['paper_id']} published day: {item['published']}, updated day: {item['updated']}"
+            )
 
             # Stop processing once we reach papers outside our date range
             if item["updated"] <= target_day_start:
@@ -114,3 +118,66 @@ def query_arxiv_papers(
         all_results[category] = category_results
 
     return all_results
+
+
+def query_single_paper(query: str) -> Optional[Dict[str, Any]]:
+    """
+    Query arXiv for a single paper by title or ID.
+
+    Args:
+        query: Paper title or arXiv ID to search for
+
+    Returns:
+        Dictionary containing paper data if found, None otherwise
+    """
+    client = arxiv.Client()
+
+    # Check if query is an arXiv ID
+    if query.replace(".", "").isdigit() or (
+        "." in query and len(query.split(".")) == 2
+    ):
+        search_query = f"id:{query}"
+    else:
+        search_query = f'ti:"{query}"'
+
+    try:
+        search_results = client.results(arxiv.Search(query=search_query, max_results=1))
+
+        # Get first result
+        search_result = next(search_results, None)
+
+        if search_result is None:
+            logger.warning(f"No paper found for query: {query}")
+            return None
+
+        item = {
+            "paper_id": search_result.get_short_id(),
+            "paper_url": search_result.entry_id,
+            "updated": str(
+                search_result.updated.astimezone(
+                    datetime.timezone(datetime.timedelta(hours=-5))
+                )
+            ),  # EST
+            "published": str(
+                search_result.published.astimezone(
+                    datetime.timezone(datetime.timedelta(hours=-5))
+                )
+            ),  # EST
+            "title": search_result.title,
+            "abstract": search_result.summary,
+            "doi": search_result.doi,
+            "authors": [str(author) for author in search_result.authors],
+            "comments": search_result.comment,
+            "journal_ref": search_result.journal_ref,
+            "primary_category": search_result.primary_category,
+            "categories": search_result.categories,
+            "links": [str(link) for link in search_result.links],
+            "pdf_url": search_result.pdf_url,
+        }
+
+        logger.info(f"Successfully retrieved paper: {item['title']}")
+        return item
+
+    except Exception as e:
+        logger.error(f"Error querying arXiv: {str(e)}")
+        return None

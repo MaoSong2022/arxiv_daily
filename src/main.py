@@ -8,13 +8,13 @@ from typing import List, Dict, Any, Union
 from loguru import logger
 from dotenv import load_dotenv
 
-from src.utils import export_to_json
+from src.utils import export_to_json, load_json
 from src.data.retrieve_paper import query_arxiv_papers
 from src.data.query_cool_papers import query_cool_papers
 from src.web.generate_html import generate_html_report
 from src.generation.generate_markdown_report import generate_markdown_report
 from src.data.summarize import add_paper_summaries
-from src.data.postprocess_paper import remove_duplicates_by_id
+from src.data.postprocess_paper import remove_duplicates_by_id, remove_by_previous_day
 from src.config import config
 
 # Load environment variables
@@ -27,22 +27,6 @@ os.environ["API_BASE_URL"] = os.getenv("API_BASE_URL")
 logger.remove()
 logger.add("daily.log", mode="w")
 logger.add(sys.stdout, level="INFO")
-
-
-def load_json(
-    file_path: str,
-) -> Union[List[Dict[str, Any]], Dict[str, List[Dict[str, Any]]]]:
-    """
-    Load JSON data from a file.
-
-    Args:
-        file_path: Path to the JSON file
-
-    Returns:
-        The parsed JSON data as a list of dictionaries or a dictionary of lists
-    """
-    with open(file_path, "r", encoding="utf-8") as f:
-        return json.load(f)
 
 
 def parse_args() -> argparse.Namespace:
@@ -116,6 +100,9 @@ def main() -> None:
     target_month = target_date.strftime("%Y-%m")
 
     output_file = f"{args.output_path}/{target_month}/{str(target_date)}.json"
+    if not os.path.exists(output_file):
+        os.makedirs(os.path.dirname(output_file), exist_ok=True)
+
     selected_paper_file = (
         f"{args.output_path}/{target_month}/{str(target_date)}_exported_papers.json"
     )
@@ -145,6 +132,7 @@ def main() -> None:
 
     # Step 2: Remove duplicates
     final_results = remove_duplicates_by_id(result)
+    final_results = remove_by_previous_day(final_results, target_date, output_file)
     new_papers = sum(len(papers) for papers in final_results.values())
     logger.info(f"Final count of new papers: {new_papers}")
     export_to_json(final_results, output_file)

@@ -1,6 +1,11 @@
 from typing import List, Dict, Any, Set
+import datetime
+import os
+from loguru import logger
+import loguru
 
-from src.config.settings import settings
+from src.utils.config_loader import load_json
+
 
 
 def remove_duplicates_by_id(
@@ -32,3 +37,24 @@ def remove_duplicates_by_id(
             result[category].append(paper)
 
     return result
+
+
+def remove_by_previous_day(
+    data: Dict[str, List[Dict[str, Any]]], current_date: datetime.date, output_file: str
+) -> Dict[str, List[Dict[str, Any]]]:
+    prev_day = current_date - datetime.timedelta(days=1)
+    while prev_day.weekday() >= 5:  # 5 = Saturday, 6 = Sunday
+        prev_day -= datetime.timedelta(days=1)
+    
+    output_dir = os.path.dirname(os.path.dirname(output_file))
+    prev_day_json_file = os.path.join(
+        output_dir,str(prev_day.strftime("%Y-%m")) , f"{str(prev_day)}.json"
+    )
+    logger.debug(f"previous json file: {prev_day_json_file}")
+    prev_day_data = load_json(prev_day_json_file)
+    prev_date_uuid = [x["paper_id"] for value in prev_day_data.values() for x in value]
+    data = {
+        key: [x for x in value if x["paper_id"] not in prev_date_uuid]
+        for key, value in data.items()
+    }
+    return data
