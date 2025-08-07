@@ -136,3 +136,4 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 - [arXiv API](https://arxiv.org/help/api/) for paper data
 - [Ollama](https://ollama.ai/) for AI model integration
+- [cool paper](https://papers.cool/) an excellent paper reading platform.
