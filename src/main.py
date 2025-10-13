@@ -3,19 +3,17 @@ import sys
 import json
 import datetime
 import argparse
-from typing import List, Dict, Any, Union
 
 from loguru import logger
 from dotenv import load_dotenv
 
-from src.utils import export_to_json, load_json
-from src.data.retrieve_paper import query_arxiv_papers
-from src.data.query_cool_papers import query_cool_papers
-from src.web.generate_html import generate_html_report
-from src.generation.generate_markdown_report import generate_markdown_report
-from src.data.summarize import add_paper_summaries
-from src.data.postprocess_paper import remove_duplicates_by_id, remove_by_previous_day
-from src.config import config
+from src import utils
+from src import retrieve_paper
+from src import html_report
+from src import markdown_report
+from src import summarize
+from src import postprocess
+from src import config
 
 # Load environment variables
 load_dotenv()
@@ -25,7 +23,7 @@ os.environ["API_BASE_URL"] = os.getenv("API_BASE_URL")
 
 # Configure logging
 logger.remove()
-logger.add("daily.log", mode="w")
+logger.add(f"daily_{datetime.date.today().strftime('%Y-%m-%d')}.log", mode="w")
 logger.add(sys.stdout, level="INFO")
 
 
@@ -122,26 +120,30 @@ def main() -> None:
 
     # Step 1: Retrieve papers from yesterday
     if args.source == "arxiv":
-        result = query_arxiv_papers(categories=config.categories, date_day=target_date)
+        result = retrieve_paper.from_arxiv(
+            categories=config.categories, date_day=target_date
+        )
     else:
-        result = query_cool_papers(categories=config.categories, date_day=target_date)
+        result = retrieve_paper.from_cool_paper(
+            categories=config.categories, date_day=target_date
+        )
 
     # Count total papers
     total_papers = sum(len(papers) for category, papers in result.items())
     logger.info(f"Retrieved a total of {total_papers} papers")
 
     # Step 2: Remove duplicates
-    final_results = remove_duplicates_by_id(result)
-    final_results = remove_by_previous_day(final_results, target_date, output_file)
+    final_results = postprocess.remove_duplicates_by_id(result)
+    final_results = postprocess.remove_by_previous_day(final_results, target_date, output_file)
     new_papers = sum(len(papers) for papers in final_results.values())
     logger.info(f"Final count of new papers: {new_papers}")
-    export_to_json(final_results, output_file)
+    utils.export_to_json(final_results, output_file)
 
     # Step 3: Add TL;DR summaries and keywords to papers
-    final_results = add_paper_summaries(final_results, model_name=args.model)
+    final_results = summarize.add_paper_summaries(final_results, model_name=args.model)
 
     # Save results to file
-    export_to_json(final_results, output_file)
+    utils.export_to_json(final_results, output_file)
     logger.info(f"Results saved to {output_file}")
 
     # Flatten the dictionary into a list of papers
@@ -150,7 +152,7 @@ def main() -> None:
         all_papers.extend(papers)
 
     # Step 5: Generate HTML report
-    generate_html_report(all_papers, html_file)
+    html_report.generate(all_papers, html_file)
     logger.info(f"HTML report generated at {html_file}")
 
     # Step 6: Generate markdown report
@@ -180,11 +182,11 @@ def process_existing_data(
     # Check if we have selected papers
     if os.path.exists(selected_paper_file):
         logger.info(f"Loading selected papers from {selected_paper_file}")
-        selected_papers = load_json(selected_paper_file)
+        selected_papers = utils.load_json(selected_paper_file)
         selected_ids = [paper["pdf_url"] for paper in selected_papers]
 
         # Load retrieved papers and filter for selected ones
-        retrieved_papers = load_json(output_file)
+        retrieved_papers = utils.load_json(output_file)
         for _, papers in retrieved_papers.items():
             for paper in papers:
                 if paper["pdf_url"] in selected_ids:
@@ -197,8 +199,8 @@ def process_existing_data(
 
         # Regenerate summaries if requested
         if args.resummarize:
-            data = add_paper_summaries(data, model_name=args.model)
-            export_to_json(data, output_file)
+            data = summarize.add_paper_summaries(data, model_name=args.model)
+            utils.export_to_json(data, output_file)
             logger.info(f"Regenerated summaries and saved to {output_file}")
 
         # Collect all papers
@@ -207,11 +209,11 @@ def process_existing_data(
 
     # Generate reports if requested or if they don't exist
     if args.html or not os.path.exists(html_file):
-        generate_html_report(all_papers, html_file)
+        html_report.generate(all_papers, html_file)
         logger.info(f"HTML report generated at {html_file}")
 
     if args.markdown or not os.path.exists(markdown_file):
-        generate_markdown_report(all_papers, markdown_file)
+        markdown_report.generate(all_papers, markdown_file)
         logger.info(f"Markdown report generated at {markdown_file}")
 
 

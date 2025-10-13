@@ -1,58 +1,44 @@
 from typing import Dict, List, Any
 from loguru import logger
 import os
-from .template_loader import get_template
+
+from functools import lru_cache
 
 
-boring_sections = ["others"]
+from src import config
 
 
-def generate_html_report(data: List[Dict[str, Any]], output_path: str) -> None:
+@lru_cache(maxsize=10)
+def load_template(template_path: str) -> str:
     """
-    Generate an HTML report that categorizes papers based on predefined classifiers.
+    Load an HTML template from a file with caching.
 
     Args:
-        data: List of paper data dictionaries
-        output_path: Path where the HTML file will be saved
+        template_path: Path to the template file
 
     Returns:
-        None
+        String containing the template content
+
+    Raises:
+        FileNotFoundError: If the template file doesn't exist
     """
-    logger.info("Generating HTML report...")
+    with open(template_path, "r", encoding="utf-8") as f:
+        return f.read()
 
-    # Initialize sections with empty lists
-    sections: Dict[str, List[Dict[str, Any]]] = {}
 
-    # Categorize papers
-    for paper in data:
-        # Check if paper has pre-assigned classifiers
-        classifiers = paper.get("classifiers", ["Unknown"])
-        if not classifiers:
-            classifiers = ["Unknown"]
+def get_template(template_name: str) -> str:
+    """
+    Get a template by name from the templates directory.
 
-        # Add paper to all its classifier categories
-        for classifier in classifiers:
-            if classifier.lower() not in sections:
-                sections[classifier.lower()] = []
-            sections[classifier.lower()].append(paper)
+    Args:
+        template_name: Name of the template file
 
-    # Create output directory if it doesn't exist
-    output_dir = os.path.dirname(output_path)
-    if output_dir and not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-
-    # Create assets directory
-    css_path = os.path.join("assets", "styles.css")
-    js_path = os.path.join("assets", "scripts.js")
-
-    # Generate HTML content
-    html_content = get_html_header(css_path, js_path) + get_html_body(sections)
-
-    # Write to file
-    with open(output_path, "w", encoding="utf-8") as f:
-        f.write(html_content)
-
-    logger.info(f"HTML report generated at {output_path}")
+    Returns:
+        String containing the template content
+    """
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    template_path = os.path.join(base_dir, "templates", template_name)
+    return load_template(template_path)
 
 
 def get_html_header(css_path: str, js_path: str) -> str:
@@ -110,7 +96,7 @@ def get_html_body(sections: Dict[str, List[Dict[str, Any]]]) -> str:
     valid_sections = {
         section: papers
         for section, papers in sections.items()
-        if papers and section not in boring_sections
+        if papers and section not in config.boring_sections
     }
 
     for section, papers in valid_sections.items():
@@ -127,7 +113,7 @@ def get_html_body(sections: Dict[str, List[Dict[str, Any]]]) -> str:
 
     for section, papers in sections.items():
         if (
-            not papers or section in boring_sections
+            not papers or section in config.boring_sections
         ):  # Skip empty sections and boring sections
             continue
 
@@ -280,3 +266,51 @@ def generate_paper_card(paper: Dict[str, Any]) -> str:
     )
 
     return html
+
+
+def generate(data: List[Dict[str, Any]], output_path: str) -> None:
+    """
+    Generate an HTML report that categorizes papers based on predefined classifiers.
+
+    Args:
+        data: List of paper data dictionaries
+        output_path: Path where the HTML file will be saved
+
+    Returns:
+        None
+    """
+    logger.info("Generating HTML report...")
+
+    # Initialize sections with empty lists
+    sections: Dict[str, List[Dict[str, Any]]] = {}
+
+    # Categorize papers
+    for paper in data:
+        # Check if paper has pre-assigned classifiers
+        classifiers = paper.get("classifiers", ["Unknown"])
+        if not classifiers:
+            classifiers = ["Unknown"]
+
+        # Add paper to all its classifier categories
+        for classifier in classifiers:
+            if classifier.lower() not in sections:
+                sections[classifier.lower()] = []
+            sections[classifier.lower()].append(paper)
+
+    # Create output directory if it doesn't exist
+    output_dir = os.path.dirname(output_path)
+    if output_dir and not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
+    # Create assets directory
+    css_path = os.path.join("assets", "styles.css")
+    js_path = os.path.join("assets", "scripts.js")
+
+    # Generate HTML content
+    html_content = get_html_header(css_path, js_path) + get_html_body(sections)
+
+    # Write to file
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(html_content)
+
+    logger.info(f"HTML report generated at {output_path}")

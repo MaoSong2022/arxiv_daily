@@ -5,7 +5,7 @@ import os
 import litellm
 import openai
 
-from src.config.settings import settings
+from src import config
 
 
 def add_paper_summaries(
@@ -31,10 +31,10 @@ def add_paper_summaries(
             papers, desc=f"Processing papers in {category}", unit="paper"
         ):
             # Create prompt for Ollama
-            user_prompt = settings.prompt_template.format(
+            user_prompt = config.prompt_template.format(
                 title=paper["title"],
                 abstract=paper["abstract"],
-                classifiers=", ".join(settings.classifiers),
+                classifiers=", ".join(config.classifiers),
             )
             logger.debug(f"User prompt:\n {user_prompt}")
 

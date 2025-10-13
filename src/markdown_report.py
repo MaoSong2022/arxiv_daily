@@ -1,10 +1,10 @@
 from typing import Dict, List, Any
 from loguru import logger
 
-from src.config.settings import settings
+from src import config
 
 
-def generate_markdown_report(data: List[Dict[str, Any]], output_path: str) -> None:
+def generate(data: List[Dict[str, Any]], output_path: str) -> None:
     """
     Generate a markdown report that categorizes papers based on predefined classifiers.
 
@@ -35,7 +35,7 @@ def generate_markdown_report(data: List[Dict[str, Any]], output_path: str) -> No
 
     for section, papers in sections.items():
         sub_section_content = ""
-        if section in settings.filtered_categories:
+        if section in config.filtered_categories:
             continue
         if not papers:  # Skip empty sections
             continue
@@ -71,7 +71,7 @@ def generate_markdown_report(data: List[Dict[str, Any]], output_path: str) -> No
     sections_contents = {}
 
     for sub_section, content in sub_sections_contents.items():
-        section = settings.super_categories.get(sub_section, "Others")
+        section = config.super_categories.get(sub_section, "Others")
         if section in sections_contents:
             sections_contents[section] += content
         else:
@@ -82,9 +82,10 @@ def generate_markdown_report(data: List[Dict[str, Any]], output_path: str) -> No
     with open(output_path, "w", encoding="utf-8") as f:
         # Add date as level 1 heading
         from datetime import datetime
+
         current_date = datetime.now().strftime("%Y-%m-%d")
         f.write(f"# {current_date}\n\n")
-        
+
         for section, content in sections_contents.items():
             f.write(f"## {section}\n")
             f.write(content)
