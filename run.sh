@@ -1,1 +1,0 @@
-uv run src/main.py --model qwen-plus
