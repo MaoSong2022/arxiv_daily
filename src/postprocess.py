@@ -1,25 +1,28 @@
-from typing import List, Dict, Any, Set
+"""Post-processing functions for paper data."""
+
 import datetime
 import os
+from pathlib import Path
+from typing import Any, Dict, List, Set
+
 from loguru import logger
 
 from src import utils
 
 
 def remove_duplicates_by_id(
-    data: Dict[str, List[Dict[str, Any]]],
-) -> Dict[str, List[Dict[str, Any]]]:
-    """
-    Remove duplicate papers based on paper_id across different categories.
+    data: dict[str, list[dict[str, Any]]],
+) -> dict[str, list[dict[str, Any]]]:
+    """Remove duplicate papers based on paper_id across different categories.
 
     Args:
-        data: Dictionary mapping categories to lists of paper data dictionaries
+        data: Dictionary mapping categories to lists of paper data dictionaries.
 
     Returns:
-        Dictionary with duplicate papers removed across categories
+        Dictionary with duplicate papers removed across categories.
     """
-    processed_paper_ids: Set[str] = set()
-    result: Dict[str, List[Dict[str, Any]]] = {}
+    processed_paper_ids: set[str] = set()
+    result: dict[str, list[dict[str, Any]]] = {}
 
     # Initialize result dictionary with empty lists for each category
     for category in data:
@@ -38,21 +41,62 @@ def remove_duplicates_by_id(
 
 
 def remove_by_previous_day(
-    data: Dict[str, List[Dict[str, Any]]], current_date: datetime.date, output_file: str
-) -> Dict[str, List[Dict[str, Any]]]:
+    data: dict[str, list[dict[str, Any]]], current_date: datetime.date, output_file: str
+) -> dict[str, list[dict[str, Any]]]:
+    """Remove papers that were already processed on the previous business day.
+
+    Args:
+        data: Dictionary mapping categories to lists of paper data.
+        current_date: Current date to calculate previous business day from.
+        output_file: Path to current output file to determine directory structure.
+
+    Returns:
+        Dictionary with papers from previous day removed.
+    """
+    # Calculate previous business day
     prev_day = current_date - datetime.timedelta(days=1)
     while prev_day.weekday() >= 5:  # 5 = Saturday, 6 = Sunday
         prev_day -= datetime.timedelta(days=1)
 
-    output_dir = os.path.dirname(os.path.dirname(output_file))
-    prev_day_json_file = os.path.join(
-        output_dir, str(prev_day.strftime("%Y-%m")), f"{str(prev_day)}.json"
-    )
-    logger.debug(f"previous json file: {prev_day_json_file}")
-    prev_day_data = utils.load_json(prev_day_json_file)
-    prev_date_uuid = [x["paper_id"] for value in prev_day_data.values() for x in value]
-    data = {
-        key: [x for x in value if x["paper_id"] not in prev_date_uuid]
-        for key, value in data.items()
-    }
-    return data
+    # Construct path to previous day's file
+    output_dir = Path(output_file).parent.parent
+    prev_day_json_file = output_dir / prev_day.strftime("%Y-%m") / f"{prev_day}.json"
+
+    logger.debug(f"Checking for previous day file: {prev_day_json_file}")
+
+    if not prev_day_json_file.exists():
+        logger.debug("No previous day file found, returning data unchanged")
+        return data
+
+    try:
+        prev_day_data = utils.load_json(str(prev_day_json_file))
+        prev_date_paper_ids = {
+            paper["paper_id"] for papers in prev_day_data.values() for paper in papers
+        }
+
+        # Filter out papers that were already processed
+        filtered_data = {
+            category: [
+                paper
+                for paper in papers
+                if paper["paper_id"] not in prev_date_paper_ids
+            ]
+            for category, papers in data.items()
+        }
+
+        removed_count = sum(
+            len(papers) - len(filtered_data[category])
+            for category, papers in data.items()
+        )
+
+        if removed_count > 0:
+            logger.info(
+                f"Removed {removed_count} papers that were already processed on {prev_day}"
+            )
+
+        return filtered_data
+
+    except Exception as e:
+        logger.error(f"Error processing previous day data: {str(e)}")
+        logger.warning("Returning data unchanged due to error")
+        return data

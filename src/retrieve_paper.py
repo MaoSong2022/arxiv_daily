@@ -1,151 +1,302 @@
-from typing import List, Dict, Any, Optional
+"""Paper retrieval functions from arXiv and papers.cool."""
+
 import datetime
-import requests
-from loguru import logger
-
-
-from bs4 import BeautifulSoup
+from typing import Any, Dict, List, Optional
 
 import arxiv
+import requests
+from bs4 import BeautifulSoup
+from loguru import logger
 
 from src import config
 
 
-def from_cool_paper(
-    categories: List[str],
-    date_day: datetime.date = datetime.date.today(),
-) -> Dict[str, List[Dict[str, Any]]]:
-    """
-    Query papers.cool for papers in specified categories.
+def _extract_paper_data_from_cool_paper(entry: BeautifulSoup, category: str) -> dict[str, Any]:
+    """Extract paper data from a papers.cool entry.
 
     Args:
-        categories: List of arXiv categories to query
-        date_day: The date to filter papers by (defaults to today)
+        entry: BeautifulSoup element containing paper data.
+        category: arXiv category for the paper.
 
     Returns:
-        Dictionary mapping categories to lists of paper data dictionaries
+        Dictionary containing extracted paper data.
     """
-    all_results: Dict[str, List[Dict[str, Any]]] = {
+    paper_id = entry.get("id", "")
+    
+    # Extract title
+    title_elem = entry.find("a", class_="title-link")
+    title = title_elem.text.strip() if title_elem else ""
+
+    # Extract authors
+    authors_elem = entry.find("p", class_="authors")
+    authors = []
+    if authors_elem:
+        author_links = authors_elem.find_all("a", class_="author")
+        authors = [author.text.strip() for author in author_links]
+
+    # Extract abstract/summary
+    summary_elem = entry.find("p", class_="summary")
+    abstract = summary_elem.text.strip() if summary_elem else ""
+
+    # Extract subjects/categories
+    subjects_elem = entry.find("p", class_="subjects")
+    categories_list = []
+    if subjects_elem:
+        subject_links = subjects_elem.find_all("a", class_="subject-1")
+        categories_list = [subject.text.strip() for subject in subject_links]
+
+    # Extract publish date
+    date_elem = entry.find("p", class_="date")
+    publish_date = ""
+    if date_elem:
+        date_text = date_elem.text.strip()
+        if "Publish" in date_text:
+            publish_date = date_text.split("Publish")[1].strip(": ")
+
+    # Extract keywords
+    keywords = entry.get("keywords", "").split(",")
+
+    return {
+        "paper_id": paper_id,
+        "paper_url": f"https://arxiv.org/abs/{paper_id}",
+        "updated": publish_date,
+        "published": publish_date,
+        "title": title,
+        "abstract": abstract,
+        "doi": "",  # papers.cool doesn't provide this
+        "authors": authors,
+        "comments": "",  # papers.cool doesn't provide this
+        "journal_ref": "",  # papers.cool doesn't provide this
+        "primary_category": category,
+        "categories": categories_list or [category],
+        "links": [
+            f"https://arxiv.org/abs/{paper_id}",
+            f"https://arxiv.org/pdf/{paper_id}.pdf",
+        ],
+        "pdf_url": f"https://arxiv.org/pdf/{paper_id}.pdf",
+        "keywords": keywords,
+    }
+
+
+def _fetch_papers_from_cool_paper_category(
+    category: str, date_day: datetime.date, max_results: int
+) -> list[dict[str, Any]]:
+    """Fetch papers from papers.cool for a single category.
+
+    Args:
+        category: arXiv category to query.
+        date_day: Date to filter papers by.
+        max_results: Maximum number of results to return.
+
+    Returns:
+        List of paper data dictionaries.
+
+    Raises:
+        requests.RequestException: If the HTTP request fails.
+        Exception: If parsing fails.
+    """
+    date_str = date_day.strftime("%Y-%m-%d")
+    url = f"https://papers.cool/arxiv/{category}?date={date_str}&show={max_results}"
+
+    response = requests.get(url, timeout=30)
+    response.raise_for_status()
+    
+    soup = BeautifulSoup(response.text, "html.parser")
+    paper_entries = soup.find_all("div", class_="panel paper")
+
+    papers = []
+    for entry in paper_entries:
+        try:
+            paper_data = _extract_paper_data_from_cool_paper(entry, category)
+            papers.append(paper_data)
+        except Exception as e:
+            logger.warning(f"Error extracting paper data: {e}")
+            continue
+
+    return papers
+
+
+def from_cool_paper(
+    categories: list[str],
+    date_day: datetime.date = datetime.date.today(),
+    max_results: int = 1000,
+) -> dict[str, list[dict[str, Any]]]:
+    """Query papers.cool for papers in specified categories.
+
+    Args:
+        categories: List of arXiv categories to query.
+        date_day: The date to filter papers by (defaults to today).
+        max_results: Maximum number of results to return per category.
+
+    Returns:
+        Dictionary mapping categories to lists of paper data dictionaries.
+    """
+    all_results: dict[str, list[dict[str, Any]]] = {
         category: [] for category in categories
     }
-    show = 1000
 
-    # Format date for URL
     for category in categories:
-        date_str = date_day.strftime("%Y-%m-%d")
-        url = f"https://papers.cool/arxiv/{category}?date={date_str}&show={show}"
-
         try:
-            response = requests.get(url)
-            response.raise_for_status()
-            soup = BeautifulSoup(response.text, "html.parser")
-
-            # Find all paper entries
-            paper_entries = soup.find_all("div", class_="panel paper")
-
-            for entry in paper_entries:
-                # Extract paper ID from div id
-                paper_id = entry.get("id", "")
-
-                # Extract title
-                title_elem = entry.find("a", class_="title-link")
-                title = title_elem.text.strip() if title_elem else ""
-
-                # Extract authors
-                authors_elem = entry.find("p", class_="authors")
-                authors = []
-                if authors_elem:
-                    author_links = authors_elem.find_all("a", class_="author")
-                    authors = [author.text.strip() for author in author_links]
-
-                # Extract abstract/summary
-                summary_elem = entry.find("p", class_="summary")
-                abstract = summary_elem.text.strip() if summary_elem else ""
-
-                # Extract subjects/categories
-                subjects_elem = entry.find("p", class_="subjects")
-                categories_list = []
-                if subjects_elem:
-                    subject_links = subjects_elem.find_all("a", class_="subject-1")
-                    categories_list = [
-                        subject.text.strip() for subject in subject_links
-                    ]
-
-                # Extract publish date
-                date_elem = entry.find("p", class_="date")
-                publish_date = ""
-                if date_elem:
-                    date_text = date_elem.text.strip()
-                    if "Publish" in date_text:
-                        publish_date = date_text.split("Publish")[1].strip(": ")
-
-                # Extract keywords
-                keywords = entry.get("keywords", "").split(",")
-
-                # Create paper data dictionary
-                paper_data = {
-                    "paper_id": paper_id,
-                    "paper_url": f"https://arxiv.org/abs/{paper_id}",
-                    "updated": publish_date,  # Using publish date as updated date
-                    "published": publish_date,
-                    "title": title,
-                    "abstract": abstract,
-                    "doi": "",  # papers.cool doesn't provide this
-                    "authors": authors,
-                    "comments": "",  # papers.cool doesn't provide this
-                    "journal_ref": "",  # papers.cool doesn't provide this
-                    "primary_category": category,
-                    "categories": categories_list or [category],
-                    "links": [
-                        f"https://arxiv.org/abs/{paper_id}",
-                        f"https://arxiv.org/pdf/{paper_id}.pdf",
-                    ],
-                    "pdf_url": f"https://arxiv.org/pdf/{paper_id}.pdf",
-                    "keywords": keywords,
-                }
-
-                # Add to results
-                all_results[category].append(paper_data)
-
+            papers = _fetch_papers_from_cool_paper_category(category, date_day, max_results)
+            all_results[category] = papers
+            
             logger.info(
-                f"Retrieved {len(all_results[category])} papers from papers.cool for category {category}"
+                f"Retrieved {len(papers)} papers from papers.cool for category {category}"
             )
 
         except requests.RequestException as e:
             logger.error(
                 f"Error fetching papers from papers.cool for category {category}: {e}"
             )
-            continue
         except Exception as e:
             logger.error(
                 f"Error parsing papers from papers.cool for category {category}: {e}"
             )
-            continue
 
     return all_results
 
 
-def from_arxiv(
-    categories: List[str],
-    max_results: int = 500,
-    date_day: datetime.date = datetime.date.today(),
-) -> Dict[str, List[Dict[str, Any]]]:
-    """
-    Query arXiv for papers submitted yesterday in specified categories.
+def _create_paper_dict_from_arxiv_result(result: arxiv.Result) -> dict[str, Any]:
+    """Create a paper dictionary from an arXiv result.
 
     Args:
-        categories: List of arXiv categories to query
-        max_results: Maximum number of results to return per category
-        date_day: The date to filter papers by (defaults to today)
+        result: arXiv result object.
 
     Returns:
-        Dictionary mapping categories to lists of paper data dictionaries
+        Dictionary containing paper data.
+    """
+    est_tz = datetime.timezone(datetime.timedelta(hours=-5))
+    
+    return {
+        "paper_id": result.get_short_id(),
+        "paper_url": result.entry_id,
+        "updated": result.updated.astimezone(est_tz),
+        "published": result.published.astimezone(est_tz),
+        "title": result.title,
+        "abstract": result.summary,
+        "doi": result.doi,
+        "authors": [str(author) for author in result.authors],
+        "comments": result.comment,
+        "journal_ref": result.journal_ref,
+        "primary_category": result.primary_category,
+        "categories": result.categories,
+        "links": [str(link) for link in result.links],
+        "pdf_url": result.pdf_url,
+    }
+
+
+def _is_paper_in_date_range(
+    paper: dict[str, Any], 
+    target_day_start: datetime.datetime, 
+    target_day_end: datetime.datetime
+) -> bool:
+    """Check if a paper falls within the target date range.
+
+    Args:
+        paper: Paper data dictionary.
+        target_day_start: Start of target date range.
+        target_day_end: End of target date range.
+
+    Returns:
+        True if paper is in date range, False otherwise.
+    """
+    updated = paper["updated"]
+    published = paper["published"]
+    
+    # Stop processing if we reach papers outside our date range
+    if updated <= target_day_start:
+        logger.debug(
+            f"Skipping paper from {updated} as it's outside our target date range"
+        )
+        return False
+
+    # Skip papers published before target date range
+    if published <= target_day_start:
+        logger.debug(
+            f"Skipping paper {paper['paper_id']} as it's published before the target date range"
+        )
+        return False
+
+    return True
+
+
+def _fetch_papers_from_arxiv_category(
+    category: str, 
+    max_results: int, 
+    target_day_start: datetime.datetime,
+    target_day_end: datetime.datetime,
+    categories: list[str]
+) -> list[dict[str, Any]]:
+    """Fetch papers from arXiv for a single category.
+
+    Args:
+        category: arXiv category to query.
+        max_results: Maximum number of results to return.
+        target_day_start: Start of target date range.
+        target_day_end: End of target date range.
+        categories: List of valid categories.
+
+    Returns:
+        List of paper data dictionaries.
     """
     client = arxiv.Client()
-    all_results: Dict[str, List[Dict[str, Any]]] = {
+    
+    search_results = client.results(
+        arxiv.Search(
+            query=f"cat:{category}",
+            max_results=max_results,
+            sort_by=arxiv.SortCriterion.LastUpdatedDate,
+            sort_order=arxiv.SortOrder.Descending,
+        ),
+    )
+
+    category_results = []
+    for search_result in search_results:
+        paper = _create_paper_dict_from_arxiv_result(search_result)
+        
+        logger.debug(
+            f"Paper {paper['paper_id']} published: {paper['published']}, updated: {paper['updated']}"
+        )
+
+        # Check if paper is in date range
+        if not _is_paper_in_date_range(paper, target_day_start, target_day_end):
+            break
+
+        # Skip papers with invalid primary category
+        if paper["primary_category"] not in categories:
+            logger.debug(
+                f"Skipping paper {paper['paper_id']} with primary category {paper['primary_category']}"
+            )
+            continue
+
+        # Convert datetime objects to strings for JSON serialization
+        paper["updated"] = str(paper["updated"])
+        paper["published"] = str(paper["published"])
+        category_results.append(paper)
+
+    return category_results
+
+
+def from_arxiv(
+    categories: list[str],
+    max_results: int = 500,
+    date_day: datetime.date = datetime.date.today(),
+) -> dict[str, list[dict[str, Any]]]:
+    """Query arXiv for papers submitted in specified categories.
+
+    Args:
+        categories: List of arXiv categories to query.
+        max_results: Maximum number of results to return per category.
+        date_day: The date to filter papers by (defaults to today).
+
+    Returns:
+        Dictionary mapping categories to lists of paper data dictionaries.
+    """
+    all_results: dict[str, list[dict[str, Any]]] = {
         category: [] for category in categories
     }
 
+    # Calculate date range
     updated_day_delta = config.day_delta[date_day.weekday()]
     target_day_start = datetime.datetime.combine(
         date_day - datetime.timedelta(days=updated_day_delta[0]),
@@ -157,96 +308,35 @@ def from_arxiv(
     ).replace(tzinfo=datetime.timezone(datetime.timedelta(hours=-5)))
 
     logger.info(
-        f"target data start: {target_day_start}, target_dat_end: {target_day_end}"
+        f"Target date start: {target_day_start}, target date end: {target_day_end}"
     )
-
-    # Check if the paper was updated on the target date
-    date_range = (target_day_start, target_day_end)
-    logger.debug(f"Date range: ({str(date_range[0])}, {str(date_range[1])})")
 
     for category in categories:
         logger.info(f"Processing category: {category}")
-
-        search_results = client.results(
-            arxiv.Search(
-                query=f"cat:{category}",
-                max_results=max_results,
-                sort_by=arxiv.SortCriterion.LastUpdatedDate,
-                sort_order=arxiv.SortOrder.Descending,
-            ),
-        )
-        logger.info("Successfully fetched results from arxiv")
-
-        category_results = []
-        for search_result in search_results:
-            item = {
-                "paper_id": search_result.get_short_id(),
-                "paper_url": search_result.entry_id,
-                "updated": search_result.updated.astimezone(
-                    datetime.timezone(datetime.timedelta(hours=-5))
-                ),  # EST
-                "published": search_result.published.astimezone(
-                    datetime.timezone(datetime.timedelta(hours=-5))
-                ),  # EST
-                "title": search_result.title,
-                "abstract": search_result.summary,
-                "doi": search_result.doi,
-                "authors": [str(author) for author in search_result.authors],
-                "comments": search_result.comment,
-                "journal_ref": search_result.journal_ref,
-                "primary_category": search_result.primary_category,
-                "categories": search_result.categories,
-                "links": [str(link) for link in search_result.links],
-                "pdf_url": search_result.pdf_url,
-            }
-
-            logger.debug(
-                f"Paper {item['paper_id']} published day: {item['published']}, updated day: {item['updated']}"
+        
+        try:
+            category_results = _fetch_papers_from_arxiv_category(
+                category, max_results, target_day_start, target_day_end, categories
             )
-
-            # Stop processing once we reach papers outside our date range
-            if item["updated"] <= target_day_start:
-                logger.debug(
-                    f"Skipping paper from {str(item['updated'])} as it's outside our target date range"
-                )
-                break
-
-            # Skip papers that weren't published yesterday or if the update is more than 7 days after publication
-            if item["published"] <= target_day_start:
-                logger.debug(
-                    f"Skipping paper {item['paper_id']} as it's published before the target date range"
-                )
-                continue
-
-            if item["primary_category"] not in categories:
-                logger.debug(
-                    f"Skipping paper {item['paper_id']} with primary category {item['primary_category']}"
-                )
-                continue
-
-            # Convert datetime objects to strings for JSON serialization
-            item["updated"] = str(item["updated"])
-            item["published"] = str(item["published"])
-            category_results.append(item)
-
-        logger.info(
-            f"Retrieved {len(category_results)} papers from category {category}"
-        )
-
-        all_results[category] = category_results
+            all_results[category] = category_results
+            
+            logger.info(f"Retrieved {len(category_results)} papers from category {category}")
+            
+        except Exception as e:
+            logger.error(f"Error processing category {category}: {e}")
+            all_results[category] = []
 
     return all_results
 
 
-def query_single_paper(query: str) -> Optional[Dict[str, Any]]:
-    """
-    Query arXiv for a single paper by title or ID.
+def query_single_paper(query: str) -> Optional[dict[str, Any]]:
+    """Query arXiv for a single paper by title or ID.
 
     Args:
-        query: Paper title or arXiv ID to search for
+        query: Paper title or arXiv ID to search for.
 
     Returns:
-        Dictionary containing paper data if found, None otherwise
+        Dictionary containing paper data if found, None otherwise.
     """
     client = arxiv.Client()
 

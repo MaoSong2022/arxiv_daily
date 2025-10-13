@@ -1,56 +1,24 @@
-from typing import Dict, List, Any
-from loguru import logger
+"""HTML report generation functions."""
+
 import os
+from typing import Any
 
-from functools import lru_cache
-
+from loguru import logger
 
 from src import config
 
 
-@lru_cache(maxsize=10)
-def load_template(template_path: str) -> str:
-    """
-    Load an HTML template from a file with caching.
-
-    Args:
-        template_path: Path to the template file
-
-    Returns:
-        String containing the template content
-
-    Raises:
-        FileNotFoundError: If the template file doesn't exist
-    """
-    with open(template_path, "r", encoding="utf-8") as f:
-        return f.read()
-
-
-def get_template(template_name: str) -> str:
-    """
-    Get a template by name from the templates directory.
-
-    Args:
-        template_name: Name of the template file
-
-    Returns:
-        String containing the template content
-    """
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    template_path = os.path.join(base_dir, "templates", template_name)
-    return load_template(template_path)
 
 
 def get_html_header(css_path: str, js_path: str) -> str:
-    """
-    Generate the HTML header with embedded CSS and JS content for improved portability.
+    """Generate the HTML header with embedded CSS and JS content for improved portability.
 
     Args:
-        css_path: Path to the CSS file
-        js_path: Path to the JavaScript file
+        css_path: Path to the CSS file.
+        js_path: Path to the JavaScript file.
 
     Returns:
-        String containing HTML header content with embedded CSS and JS
+        String containing HTML header content with embedded CSS and JS.
     """
     # Read CSS and JS content from files
     css_content = ""
@@ -76,22 +44,17 @@ def get_html_header(css_path: str, js_path: str) -> str:
     return html_header
 
 
-def get_html_body(sections: Dict[str, List[Dict[str, Any]]]) -> str:
-    """
-    Generate the HTML body content with paper sections.
+def _generate_sidebar_items(sections: dict[str, list[dict[str, Any]]]) -> str:
+    """Generate sidebar navigation items.
 
     Args:
-        sections: Dictionary mapping classifiers to lists of paper data
+        sections: Dictionary mapping classifiers to lists of paper data.
 
     Returns:
-        String containing HTML body content
+        HTML string for sidebar items.
     """
-    # Load the main layout template
-    template = get_template("main_layout_template.html")
-
-    # Generate sidebar navigation items
     sidebar_items = ""
-
+    
     # Filter out empty sections and "Others"
     valid_sections = {
         section: papers
@@ -103,18 +66,25 @@ def get_html_body(sections: Dict[str, List[Dict[str, Any]]]) -> str:
         section_id = section.lower().replace(" ", "-")
         paper_count = len(papers)
         sidebar_items += f'<li><a class="sidebar-link" data-section="{section_id}" '
-        sidebar_items += (
-            f"onclick=\"scrollToSection('{section_id}')\"><span>{section}</span>"
-        )
+        sidebar_items += f"onclick=\"scrollToSection('{section_id}')\"><span>{section}</span>"
         sidebar_items += f'<span class="paper-count">{paper_count}</span></a></li>\n'
 
-    # Generate main content sections
+    return sidebar_items
+
+
+def _generate_content_sections(sections: dict[str, list[dict[str, Any]]]) -> str:
+    """Generate main content sections.
+
+    Args:
+        sections: Dictionary mapping classifiers to lists of paper data.
+
+    Returns:
+        HTML string for content sections.
+    """
     content_sections = ""
 
     for section, papers in sections.items():
-        if (
-            not papers or section in config.boring_sections
-        ):  # Skip empty sections and boring sections
+        if not papers or section in config.boring_sections:
             continue
 
         # Create section ID for navigation
@@ -126,7 +96,8 @@ def get_html_body(sections: Dict[str, List[Dict[str, Any]]]) -> str:
             paper_cards += generate_paper_card(paper)
 
         # Use the section template
-        section_template = get_template("section_template.html")
+        with open(config.section_template, "r", encoding="utf-8") as f:
+            section_template = f.read()
         content_sections += section_template.format(
             section_id=section_id,
             section_name=section,
@@ -134,8 +105,16 @@ def get_html_body(sections: Dict[str, List[Dict[str, Any]]]) -> str:
             paper_cards=paper_cards,
         )
 
-    # Add export buttons
-    export_buttons = """
+    return content_sections
+
+
+def _generate_export_buttons() -> str:
+    """Generate export buttons HTML.
+
+    Returns:
+        HTML string for export buttons.
+    """
+    return """
 <div class="export-container">
   <button class="export-button" onclick="exportSelectedPapers()">
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -155,6 +134,25 @@ def get_html_body(sections: Dict[str, List[Dict[str, Any]]]) -> str:
 </div>
 """
 
+
+def get_html_body(sections: dict[str, list[dict[str, Any]]]) -> str:
+    """Generate the HTML body content with paper sections.
+
+    Args:
+        sections: Dictionary mapping classifiers to lists of paper data.
+
+    Returns:
+        String containing HTML body content.
+    """
+    # Load the main layout template
+    with open(config.main_layout_template, "r", encoding="utf-8") as f:
+        template = f.read()
+
+    # Generate components
+    sidebar_items = _generate_sidebar_items(sections)
+    content_sections = _generate_content_sections(sections)
+    export_buttons = _generate_export_buttons()
+
     # Fill in the main template
     html = template.format(
         sidebar_items=sidebar_items,
@@ -165,18 +163,18 @@ def get_html_body(sections: Dict[str, List[Dict[str, Any]]]) -> str:
     return html
 
 
-def generate_paper_card(paper: Dict[str, Any]) -> str:
-    """
-    Generate HTML for a single paper card.
+def generate_paper_card(paper: dict[str, Any]) -> str:
+    """Generate HTML for a single paper card.
 
     Args:
-        paper: Dictionary containing paper data
+        paper: Dictionary containing paper data.
 
     Returns:
-        String containing HTML for the paper card
+        String containing HTML for the paper card.
     """
     # Load the template
-    template = get_template("paper_card_template.html")
+    with open(config.paper_card_template, "r", encoding="utf-8") as f:
+        template = f.read()
 
     # Extract paper data
     title = paper.get("title", "No Title")
@@ -185,7 +183,7 @@ def generate_paper_card(paper: Dict[str, Any]) -> str:
     tldr = paper.get("tldr", "")
     authors = paper.get("authors", [])
     abstract = paper.get("abstract", "")
-    paper_id = paper.get("id", "")
+    paper_id = paper.get("paper_id", "")
     comments = paper.get("comments", "")
 
     # Extract date information
@@ -268,21 +266,17 @@ def generate_paper_card(paper: Dict[str, Any]) -> str:
     return html
 
 
-def generate(data: List[Dict[str, Any]], output_path: str) -> None:
-    """
-    Generate an HTML report that categorizes papers based on predefined classifiers.
+def generate(data: list[dict[str, Any]], output_path: str) -> None:
+    """Generate an HTML report that categorizes papers based on predefined classifiers.
 
     Args:
-        data: List of paper data dictionaries
-        output_path: Path where the HTML file will be saved
-
-    Returns:
-        None
+        data: List of paper data dictionaries.
+        output_path: Path where the HTML file will be saved.
     """
     logger.info("Generating HTML report...")
 
     # Initialize sections with empty lists
-    sections: Dict[str, List[Dict[str, Any]]] = {}
+    sections: dict[str, list[dict[str, Any]]] = {}
 
     # Categorize papers
     for paper in data:

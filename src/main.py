@@ -1,35 +1,52 @@
+"""Main entry point for the ArXiv Daily Paper Tracker."""
+
+import argparse
+import datetime
+import json
 import os
 import sys
-import json
-import datetime
-import argparse
+from pathlib import Path
+from typing import Any
 
-from loguru import logger
 from dotenv import load_dotenv
+from loguru import logger
 
-from src import utils
-from src import retrieve_paper
-from src import html_report
-from src import markdown_report
-from src import summarize
-from src import postprocess
-from src import config
+from src import (
+    config,
+    html_report,
+    markdown_report,
+    postprocess,
+    retrieve_paper,
+    summarize,
+    utils,
+)
 
 # Load environment variables
 load_dotenv()
 
-os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY")
-os.environ["API_BASE_URL"] = os.getenv("API_BASE_URL")
+# Set environment variables for LLM
+api_key = os.getenv("OPENAI_API_KEY")
+api_base_url = os.getenv("API_BASE_URL")
+
+if not api_key:
+    logger.warning("OPENAI_API_KEY not found in environment variables")
+if not api_base_url:
+    logger.warning("API_BASE_URL not found in environment variables")
+
+os.environ["OPENAI_API_KEY"] = api_key or ""
+os.environ["API_BASE_URL"] = api_base_url or ""
 
 # Configure logging
 logger.remove()
-logger.add(f"daily_{datetime.date.today().strftime('%Y-%m-%d')}.log", mode="w")
+logger.add(f"logs/daily_{datetime.date.today().strftime('%Y-%m-%d')}.log", mode="w")
 logger.add(sys.stdout, level="INFO")
 
 
 def parse_args() -> argparse.Namespace:
-    """
-    Parse command line arguments.
+    """Parse command line arguments.
+
+    Returns:
+        Parsed command line arguments.
     """
     parser = argparse.ArgumentParser(description="ArXiv paper collector and reporter")
     parser.add_argument(
@@ -71,55 +88,46 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main() -> None:
+def setup_output_directories(
+    output_path: str, target_date: datetime.date
+) -> tuple[Path, Path, Path, Path]:
+    """Set up output directories and file paths.
+
+    Args:
+        output_path: Base output directory path.
+        target_date: Target date for file naming.
+
+    Returns:
+        Tuple of (output_file, selected_paper_file, html_file, markdown_file) paths.
     """
-    Main function to retrieve yesterday's arXiv papers in specified categories.
-
-    Command line arguments:
-        --retrieve: Retrieve papers again even if output file exists
-        --html: Regenerate HTML report
-        --markdown: Regenerate markdown report
-        --resummarize: Regenerate summaries for papers
-        --date: Date to collect papers for (YYYY-MM-DD format). Defaults to today if not provided.
-        --model: Model name to use for generating summaries (default: qwen2.5:32b)
-    """
-    # Parse command line arguments
-    args = parse_args()
-
-    # Ensure output directory exists
-    os.makedirs(args.output_path, exist_ok=True)
-
-    # Use provided date or default to today
-    if args.date:
-        target_date = datetime.date.fromisoformat(args.date)
-    else:
-        target_date = datetime.date.today()
+    output_path_obj = Path(output_path)
+    output_path_obj.mkdir(exist_ok=True)
 
     target_month = target_date.strftime("%Y-%m")
+    output_dir = output_path_obj / target_month
+    output_dir.mkdir(exist_ok=True)
 
-    output_file = f"{args.output_path}/{target_month}/{str(target_date)}.json"
-    if not os.path.exists(output_file):
-        os.makedirs(os.path.dirname(output_file), exist_ok=True)
+    output_file = output_dir / f"{target_date}.json"
+    selected_paper_file = output_dir / f"{target_date}_exported_papers.json"
+    html_file = output_dir / f"{target_date}_report.html"
+    markdown_file = output_dir / f"{target_date}_report.md"
 
-    selected_paper_file = (
-        f"{args.output_path}/{target_month}/{str(target_date)}_exported_papers.json"
-    )
-    logger.info(f"Selected paper file: {selected_paper_file}")
-    html_file = f"{args.output_path}/{target_month}/{str(target_date)}_report.html"
-    markdown_file = f"{args.output_path}/{target_month}/{str(target_date)}_report.md"
+    return output_file, selected_paper_file, html_file, markdown_file
 
-    logger.info(f"Collecting papers from {str(target_date)}")
 
-    # Check if we can use existing data or need to retrieve new papers
-    if os.path.exists(output_file) and not args.retrieve:
-        logger.info("Using existing data")
-        process_existing_data(
-            output_file, selected_paper_file, html_file, markdown_file, args
-        )
-        return
+def retrieve_papers(
+    source: str, target_date: datetime.date
+) -> dict[str, list[dict[str, Any]]]:
+    """Retrieve papers from the specified source.
 
-    # Step 1: Retrieve papers from yesterday
-    if args.source == "arxiv":
+    Args:
+        source: Source to retrieve from ('arxiv' or 'cool_paper').
+        target_date: Date to retrieve papers for.
+
+    Returns:
+        Dictionary mapping categories to lists of paper data.
+    """
+    if source == "arxiv":
         result = retrieve_paper.from_arxiv(
             categories=config.categories, date_day=target_date
         )
@@ -128,36 +136,114 @@ def main() -> None:
             categories=config.categories, date_day=target_date
         )
 
-    # Count total papers
-    total_papers = sum(len(papers) for category, papers in result.items())
+    total_papers = sum(len(papers) for papers in result.values())
     logger.info(f"Retrieved a total of {total_papers} papers")
+    return result
 
-    # Step 2: Remove duplicates
-    final_results = postprocess.remove_duplicates_by_id(result)
-    final_results = postprocess.remove_by_previous_day(final_results, target_date, output_file)
-    new_papers = sum(len(papers) for papers in final_results.values())
+
+def process_papers(
+    papers: dict[str, list[dict[str, Any]]],
+    target_date: datetime.date,
+    output_file: Path,
+    model_name: str,
+) -> dict[str, list[dict[str, Any]]]:
+    """Process papers by removing duplicates and adding summaries.
+
+    Args:
+        papers: Raw papers data.
+        target_date: Target date for processing.
+        output_file: Path to save processed data.
+        model_name: Model name for summarization.
+
+    Returns:
+        Processed papers with summaries.
+    """
+    # Remove duplicates
+    processed_papers = postprocess.remove_duplicates_by_id(papers)
+    processed_papers = postprocess.remove_by_previous_day(
+        processed_papers, target_date, str(output_file)
+    )
+
+    new_papers = sum(len(papers) for papers in processed_papers.values())
     logger.info(f"Final count of new papers: {new_papers}")
-    utils.export_to_json(final_results, output_file)
 
-    # Step 3: Add TL;DR summaries and keywords to papers
-    final_results = summarize.add_paper_summaries(final_results, model_name=args.model)
+    # Save intermediate results
+    utils.export_to_json(processed_papers, str(output_file))
 
-    # Save results to file
-    utils.export_to_json(final_results, output_file)
+    # Add summaries
+    final_papers = summarize.add_paper_summaries(
+        processed_papers, model_name=model_name
+    )
+
+    # Save final results
+    utils.export_to_json(final_papers, str(output_file))
     logger.info(f"Results saved to {output_file}")
 
-    # Flatten the dictionary into a list of papers
-    all_papers = []
-    for category, papers in final_results.items():
-        all_papers.extend(papers)
+    return final_papers
 
-    # Step 5: Generate HTML report
-    html_report.generate(all_papers, html_file)
+
+def generate_reports(
+    papers: dict[str, list[dict[str, Any]]], html_file: Path, markdown_file: Path
+) -> None:
+    """Generate HTML and Markdown reports from processed papers.
+
+    Args:
+        papers: Processed papers data.
+        html_file: Path for HTML report.
+        markdown_file: Path for Markdown report.
+    """
+    # Flatten papers into a single list
+    all_papers = [paper for papers_list in papers.values() for paper in papers_list]
+
+    # Generate HTML report
+    html_report.generate(all_papers, str(html_file))
     logger.info(f"HTML report generated at {html_file}")
 
-    # Step 6: Generate markdown report
-    # generate_markdown_report(all_papers, markdown_file)
-    # logger.info(f"Markdown report generated at {markdown_file}")
+    # Generate Markdown report
+    markdown_report.generate(all_papers, str(markdown_file))
+    logger.info(f"Markdown report generated at {markdown_file}")
+
+
+def load_papers_from_files(
+    output_file: str,
+    selected_paper_file: str,
+    model_name: str,
+    regenerate_summaries: bool = False,
+) -> list[dict[str, Any]]:
+    """Load and process papers from existing files.
+
+    Args:
+        output_file: Path to the main papers JSON file.
+        selected_paper_file: Path to the selected papers JSON file.
+        model_name: Model name for summarization if needed.
+        regenerate_summaries: Whether to regenerate paper summaries.
+
+    Returns:
+        List of processed paper dictionaries.
+    """
+    if Path(selected_paper_file).exists():
+        logger.info(f"Loading selected papers from {selected_paper_file}")
+        selected_papers = utils.load_json(selected_paper_file)
+        selected_ids = {paper["pdf_url"] for paper in selected_papers}
+
+        # Load and filter papers
+        retrieved_papers = utils.load_json(output_file)
+        return [
+            paper
+            for papers in retrieved_papers.values()
+            for paper in papers
+            if paper["pdf_url"] in selected_ids
+        ]
+
+    logger.info(f"Loading all papers from {output_file}")
+    data = utils.load_json(output_file)
+
+    if regenerate_summaries:
+        data = summarize.add_paper_summaries(data, model_name=model_name)
+        utils.export_to_json(data, output_file)
+        logger.info(f"Regenerated summaries and saved to {output_file}")
+
+    return [paper for papers in data.values() for paper in papers]
 
 
 def process_existing_data(
@@ -167,54 +253,65 @@ def process_existing_data(
     markdown_file: str,
     args: argparse.Namespace,
 ) -> None:
-    """
-    Process existing data files instead of retrieving new papers.
+    """Process existing data files instead of retrieving new papers.
 
     Args:
-        output_file: Path to the main papers JSON file
-        selected_paper_file: Path to the selected papers JSON file
-        html_file: Path to generate the HTML report
-        markdown_file: Path to generate the markdown report
-        args: Command line arguments
+        output_file: Path to the main papers JSON file.
+        selected_paper_file: Path to the selected papers JSON file.
+        html_file: Path to generate the HTML report.
+        markdown_file: Path to generate the markdown report.
+        args: Command line arguments.
     """
-    all_papers = []
-
-    # Check if we have selected papers
-    if os.path.exists(selected_paper_file):
-        logger.info(f"Loading selected papers from {selected_paper_file}")
-        selected_papers = utils.load_json(selected_paper_file)
-        selected_ids = [paper["pdf_url"] for paper in selected_papers]
-
-        # Load retrieved papers and filter for selected ones
-        retrieved_papers = utils.load_json(output_file)
-        for _, papers in retrieved_papers.items():
-            for paper in papers:
-                if paper["pdf_url"] in selected_ids:
-                    all_papers.append(paper)
-    else:
-        logger.info(f"Loading all papers from {output_file}")
-        # Load all papers from the output file
-        with open(output_file, "r", encoding="utf-8") as f:
-            data = json.load(f)
-
-        # Regenerate summaries if requested
-        if args.resummarize:
-            data = summarize.add_paper_summaries(data, model_name=args.model)
-            utils.export_to_json(data, output_file)
-            logger.info(f"Regenerated summaries and saved to {output_file}")
-
-        # Collect all papers
-        for _, papers in data.items():
-            all_papers.extend(papers)
+    all_papers = load_papers_from_files(
+        output_file, selected_paper_file, args.model, args.resummarize
+    )
 
     # Generate reports if requested or if they don't exist
-    if args.html or not os.path.exists(html_file):
+    if args.html or not Path(html_file).exists():
         html_report.generate(all_papers, html_file)
         logger.info(f"HTML report generated at {html_file}")
 
-    if args.markdown or not os.path.exists(markdown_file):
+    if args.markdown or not Path(markdown_file).exists():
         markdown_report.generate(all_papers, markdown_file)
         logger.info(f"Markdown report generated at {markdown_file}")
+
+
+def main() -> None:
+    """Main function to retrieve and process arXiv papers.
+
+    Retrieves papers from the specified date, removes duplicates, generates summaries,
+    and creates HTML and Markdown reports.
+    """
+    args = parse_args()
+    target_date = (
+        datetime.date.fromisoformat(args.date) if args.date else datetime.date.today()
+    )
+
+    logger.info(f"Collecting papers from {target_date}")
+
+    # Set up output directories
+    output_file, selected_paper_file, html_file, markdown_file = (
+        setup_output_directories(args.output_path, target_date)
+    )
+
+    # Check if we can use existing data
+    if output_file.exists() and not args.retrieve:
+        logger.info("Using existing data")
+        process_existing_data(
+            str(output_file),
+            str(selected_paper_file),
+            str(html_file),
+            str(markdown_file),
+            args,
+        )
+        return
+
+    # Retrieve and process papers
+    papers = retrieve_papers(args.source, target_date)
+    processed_papers = process_papers(papers, target_date, output_file, args.model)
+
+    # Generate reports
+    generate_reports(processed_papers, html_file, markdown_file)
 
 
 if __name__ == "__main__":

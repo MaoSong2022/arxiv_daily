@@ -1,19 +1,19 @@
-from typing import Dict, List, Any
+"""Markdown report generation functions."""
+
+from datetime import datetime
+from typing import Any, Dict, List
+
 from loguru import logger
 
 from src import config
 
 
-def generate(data: List[Dict[str, Any]], output_path: str) -> None:
-    """
-    Generate a markdown report that categorizes papers based on predefined classifiers.
+def generate(data: list[dict[str, Any]], output_path: str) -> None:
+    """Generate a markdown report that categorizes papers based on predefined classifiers.
 
     Args:
-        data: List of paper data dictionaries
-        output_path: Path where the markdown file will be saved
-
-    Returns:
-        None
+        data: List of paper data dictionaries.
+        output_path: Path where the markdown file will be saved.
     """
     logger.info("Generating markdown report...")
     # Initialize sections with empty lists
@@ -81,8 +81,6 @@ def generate(data: List[Dict[str, Any]], output_path: str) -> None:
     # Write to file
     with open(output_path, "w", encoding="utf-8") as f:
         # Add date as level 1 heading
-        from datetime import datetime
-
         current_date = datetime.now().strftime("%Y-%m-%d")
         f.write(f"# {current_date}\n\n")
 
