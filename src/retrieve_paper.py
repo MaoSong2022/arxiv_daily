@@ -4,6 +4,7 @@ import datetime
 from typing import Any, Dict, List, Optional
 
 import arxiv
+import pytz
 import requests
 from bs4 import BeautifulSoup
 from loguru import logger
@@ -11,7 +12,9 @@ from loguru import logger
 from src import config
 
 
-def _extract_paper_data_from_cool_paper(entry: BeautifulSoup, category: str) -> dict[str, Any]:
+def _extract_paper_data_from_cool_paper(
+    entry: BeautifulSoup, category: str
+) -> dict[str, Any]:
     """Extract paper data from a papers.cool entry.
 
     Args:
@@ -22,7 +25,7 @@ def _extract_paper_data_from_cool_paper(entry: BeautifulSoup, category: str) -> 
         Dictionary containing extracted paper data.
     """
     paper_id = entry.get("id", "")
-    
+
     # Extract title
     title_elem = entry.find("a", class_="title-link")
     title = title_elem.text.strip() if title_elem else ""
@@ -100,7 +103,7 @@ def _fetch_papers_from_cool_paper_category(
 
     response = requests.get(url, timeout=30)
     response.raise_for_status()
-    
+
     soup = BeautifulSoup(response.text, "html.parser")
     paper_entries = soup.find_all("div", class_="panel paper")
 
@@ -137,9 +140,11 @@ def from_cool_paper(
 
     for category in categories:
         try:
-            papers = _fetch_papers_from_cool_paper_category(category, date_day, max_results)
+            papers = _fetch_papers_from_cool_paper_category(
+                category, date_day, max_results
+            )
             all_results[category] = papers
-            
+
             logger.info(
                 f"Retrieved {len(papers)} papers from papers.cool for category {category}"
             )
@@ -165,8 +170,8 @@ def _create_paper_dict_from_arxiv_result(result: arxiv.Result) -> dict[str, Any]
     Returns:
         Dictionary containing paper data.
     """
-    est_tz = datetime.timezone(datetime.timedelta(hours=-5))
-    
+    est_tz = pytz.timezone("America/New_York")
+
     return {
         "paper_id": result.get_short_id(),
         "paper_url": result.entry_id,
@@ -185,47 +190,14 @@ def _create_paper_dict_from_arxiv_result(result: arxiv.Result) -> dict[str, Any]
     }
 
 
-def _is_paper_in_date_range(
-    paper: dict[str, Any], 
-    target_day_start: datetime.datetime, 
-    target_day_end: datetime.datetime
-) -> bool:
-    """Check if a paper falls within the target date range.
-
-    Args:
-        paper: Paper data dictionary.
-        target_day_start: Start of target date range.
-        target_day_end: End of target date range.
-
-    Returns:
-        True if paper is in date range, False otherwise.
-    """
-    updated = paper["updated"]
-    published = paper["published"]
-    
-    # Stop processing if we reach papers outside our date range
-    if updated <= target_day_start:
-        logger.debug(
-            f"Skipping paper from {updated} as it's outside our target date range"
-        )
-        return False
-
-    # Skip papers published before target date range
-    if published <= target_day_start:
-        logger.debug(
-            f"Skipping paper {paper['paper_id']} as it's published before the target date range"
-        )
-        return False
-
-    return True
 
 
 def _fetch_papers_from_arxiv_category(
-    category: str, 
-    max_results: int, 
+    category: str,
+    max_results: int,
     target_day_start: datetime.datetime,
     target_day_end: datetime.datetime,
-    categories: list[str]
+    categories: list[str],
 ) -> list[dict[str, Any]]:
     """Fetch papers from arXiv for a single category.
 
@@ -240,7 +212,7 @@ def _fetch_papers_from_arxiv_category(
         List of paper data dictionaries.
     """
     client = arxiv.Client()
-    
+
     search_results = client.results(
         arxiv.Search(
             query=f"cat:{category}",
@@ -253,14 +225,14 @@ def _fetch_papers_from_arxiv_category(
     category_results = []
     for search_result in search_results:
         paper = _create_paper_dict_from_arxiv_result(search_result)
-        
+
         logger.debug(
             f"Paper {paper['paper_id']} published: {paper['published']}, updated: {paper['updated']}"
         )
 
         # Check if paper is in date range
-        if not _is_paper_in_date_range(paper, target_day_start, target_day_end):
-            break
+        if paper["published"] < target_day_start:
+            continue
 
         # Skip papers with invalid primary category
         if paper["primary_category"] not in categories:
@@ -313,15 +285,17 @@ def from_arxiv(
 
     for category in categories:
         logger.info(f"Processing category: {category}")
-        
+
         try:
             category_results = _fetch_papers_from_arxiv_category(
                 category, max_results, target_day_start, target_day_end, categories
             )
             all_results[category] = category_results
-            
-            logger.info(f"Retrieved {len(category_results)} papers from category {category}")
-            
+
+            logger.info(
+                f"Retrieved {len(category_results)} papers from category {category}"
+            )
+
         except Exception as e:
             logger.error(f"Error processing category {category}: {e}")
             all_results[category] = []
