@@ -190,8 +190,6 @@ def _create_paper_dict_from_arxiv_result(result: arxiv.Result) -> dict[str, Any]
     }
 
 
-
-
 def _fetch_papers_from_arxiv_category(
     category: str,
     max_results: int,
@@ -270,14 +268,15 @@ def from_arxiv(
 
     # Calculate date range
     updated_day_delta = config.day_delta[date_day.weekday()]
+    est_tz = pytz.timezone("America/New_York")
     target_day_start = datetime.datetime.combine(
         date_day - datetime.timedelta(days=updated_day_delta[0]),
         datetime.time(10, 0),
-    ).replace(tzinfo=datetime.timezone(datetime.timedelta(hours=-5)))
+    ).replace(tzinfo=est_tz)
     target_day_end = datetime.datetime.combine(
         date_day - datetime.timedelta(days=updated_day_delta[1]),
         datetime.time(14, 0),
-    ).replace(tzinfo=datetime.timezone(datetime.timedelta(hours=-5)))
+    ).replace(tzinfo=est_tz)
 
     logger.info(
         f"Target date start: {target_day_start}, target date end: {target_day_end}"
